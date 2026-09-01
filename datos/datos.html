@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>asistencia</title>
+    <link rel="stylesheet" href="../styles.css">
+</head>
+
+<body>
+
+    <main class="container data-container">
+        <div class="page-header">
+            <div>
+                <p class="eyebrow">Base de datos</p>
+                <h1>Registro de asistencia</h1>
+            </div>
+            <button class="back-button" type="button" onclick="window.history.back()">Regresar</button>
+        </div>
+
+        <form id="registro-form" class="registro-form">
+            <h2>Registrar usuario</h2>
+            <label for="rut">RUT (ID de usuario)</label>
+            <input type="text" id="rut" required placeholder="12.345.678-9">
+            <label for="nombre">Nombre</label>
+            <input type="text" id="nombre" required placeholder="Nombre del usuario">
+            <label for="email">Email</label>
+            <input type="email" id="email" required placeholder="correo@mail.com">
+            <button type="submit">Guardar</button>
+            <p id="form-message" class="message" role="status"></p>
+        </form>
+
+        <div class="asistencia-header">
+            <div>
+                <h2 class="asistencia-titulo">Marcar asistencia</h2>
+                <p>Selecciona a los alumnos que asistieron hoy (<span id="fecha-hoy"></span>)</p>
+            </div>
+            <button id="guardar-asistencia" type="button" class="guardar-btn">Guardar asistencia</button>
+        </div>
+        <p id="asistencia-message" class="message" role="status"></p>
+
+        <p id="table-message" class="message" role="status">Cargando datos...</p>
+
+        <table class="data-table records-table">
+            <thead>
+                <tr>
+                    <th class="presente-col">Presente</th>
+                    <th>ID de Usuario (RUT)</th>
+                    <th>Nombre</th>
+                    <th>Email</th>
+                </tr>
+            </thead>
+            <tbody id="cuerpo-tabla"></tbody>
+        </table>
+    </main>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+    import { getDatabase, onValue, ref, update } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyACFOP5GMyzgvyiIav1v-nY0sicTkVlZdg",
+        authDomain: "mi-primer-sistema-cloud.firebaseapp.com",
+        databaseURL: "https://mi-primer-sistema-cloud-default-rtdb.firebaseio.com",
+        projectId: "mi-primer-sistema-cloud",
+        storageBucket: "mi-primer-sistema-cloud.firebasestorage.app",
+        messagingSenderId: "240922563586",
+        appId: "1:240922563586:web:c10508cf9a21af7fb6431b",
+        measurementId: "G-F1ZWSTE9XS"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+    const usuariosRef = ref(database, 'usuarios');
+
+    const tableBody = document.querySelector('#cuerpo-tabla');
+    const tableMessage = document.querySelector('#table-message');
+
+    const form = document.querySelector('#registro-form');
+    const formMessage = document.querySelector('#form-message');
+    const rutInput = document.querySelector('#rut');
+    const nombreInput = document.querySelector('#nombre');
+    const emailInput = document.querySelector('#email');
+
+    const guardarBtn = document.querySelector('#guardar-asistencia');
+    const asistenciaMessage = document.querySelector('#asistencia-message');
+    const fechaHoy = document.querySelector('#fecha-hoy');
+
+    const hoy = new Date();
+    const fechaISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+    fechaHoy.textContent = fechaISO;
+
+    form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        formMessage.textContent = 'Guardando...';
+
+        const rut = rutInput.value.trim().replace(/\s+/g, '');
+
+        if (!rut) {
+            formMessage.textContent = 'El RUT es obligatorio.';
+            return;
+        }
+
+        const usuarioEspecificoRef = ref(database, `usuarios/${rut}`);
+
+        usuarioEspecificoRef.once('value').then((snap) => {
+            if (snap.exists()) {
+                formMessage.textContent = 'Ya existe un usuario con ese RUT.';
+                return;
+            }
+            return usuarioEspecificoRef.set({
+                username: nombreInput.value.trim(),
+                email: emailInput.value.trim()
+            }).then(() => {
+                formMessage.textContent = 'Usuario registrado correctamente.';
+                form.reset();
+            });
+        }).catch((error) => {
+            console.error('Error al registrar usuario:', error);
+            formMessage.textContent = `No se pudo guardar (${error.code || 'permiso denegado'}). Revisa las reglas de Firebase.`;
+        });
+    });
+
+    guardarBtn.addEventListener('click', () => {
+        const asistencias = {};
+
+        tableBody.querySelectorAll('tr').forEach((row) => {
+            const userId = row.dataset.userId;
+            const checkbox = row.querySelector('input[type="checkbox"]');
+            if (userId && checkbox) {
+                asistencias[`asistencia/${fechaISO}/${userId}`] = checkbox.checked;
+            }
+        });
+
+        if (Object.keys(asistencias).length === 0) {
+            asistenciaMessage.textContent = 'No hay usuarios registrados para marcar.';
+            return;
+        }
+
+        asistenciaMessage.textContent = 'Guardando asistencia...';
+        guardarBtn.disabled = true;
+
+        update(ref(database), asistencias).then(() => {
+            asistenciaMessage.textContent = 'Asistencia guardada correctamente.';
+        }).catch((error) => {
+            console.error('Error al guardar asistencia:', error);
+            asistenciaMessage.textContent = `No se pudo guardar la asistencia (${error.code || 'permiso denegado'}).`;
+        }).finally(() => {
+            guardarBtn.disabled = false;
+        });
+    });
+
+    const asistenciaRef = ref(database, `asistencia/${fechaISO}`);
+
+    onValue(asistenciaRef, (asistenciaSnap) => {
+        tableBody.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+            cb.checked = Boolean(asistenciaSnap.child(cb.dataset.userId).val());
+        });
+    });
+
+    onValue(usuariosRef, (snapshot) => {
+        tableBody.replaceChildren();
+
+        if (!snapshot.exists()) {
+            tableMessage.textContent = 'No hay datos disponibles. Registra un usuario.';
+            tableBody.replaceChildren();
+            return;
+        }
+
+        snapshot.forEach((userSnapshot) => {
+            const user = userSnapshot.val() || {};
+            const row = document.createElement('tr');
+            row.dataset.userId = userSnapshot.key;
+
+            const checkboxCell = document.createElement('td');
+            checkboxCell.classList.add('presente-col');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.dataset.userId = userSnapshot.key;
+            checkboxCell.appendChild(checkbox);
+            row.appendChild(checkboxCell);
+
+            [userSnapshot.key, user.username || 'Sin nombre', user.email || 'Sin correo'].forEach((value) => {
+                const cell = document.createElement('td');
+                cell.textContent = value;
+                row.appendChild(cell);
+            });
+
+            tableBody.appendChild(row);
+        });
+
+        tableMessage.textContent = '';
+    }, (error) => {
+        console.error('Error al leer usuarios desde Firebase:', error);
+        tableBody.replaceChildren();
+        tableMessage.textContent = `No se pudieron cargar los datos (${error.code || 'permiso denegado'}). Revisa las reglas de Firebase.`;
+    });
+</script>
+
+</body>
+</html>
