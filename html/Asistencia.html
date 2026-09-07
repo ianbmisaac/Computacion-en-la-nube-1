@@ -18,10 +18,15 @@
             <button class="back-button" type="button" onclick="window.history.back()">Regresar</button>
         </div>
 
+        <div class="db-switch">
+            <button id="btn-nube" type="button" class="active">Base de datos en la nube (Firebase)</button>
+            <button id="btn-local" type="button">Base de datos local</button>
+        </div>
+
         <form id="registro-form" class="registro-form">
             <h2>Registrar usuario</h2>
             <label for="rut">RUT (ID de usuario)</label>
-            <input type="text" id="rut" required placeholder="12.345.678-9">
+            <input type="text" id="rut" required placeholder="12345678-9">
             <label for="nombre">Nombre</label>
             <input type="text" id="nombre" required placeholder="Nombre del usuario">
             <label for="email">Email</label>
@@ -30,28 +35,63 @@
             <p id="form-message" class="message" role="status"></p>
         </form>
 
-        <div class="asistencia-header">
-            <div>
-                <h2 class="asistencia-titulo">Marcar asistencia</h2>
-                <p>Selecciona a los alumnos que asistieron hoy (<span id="fecha-hoy"></span>)</p>
+        <section>
+            <div class="asistencia-header">
+                <div>
+                    <h2 class="asistencia-titulo">Marcar asistencia</h2>
+                    <p>Selecciona a los alumnos que asistieron hoy (<span id="fecha-hoy"></span>)</p>
+                </div>
+                <button id="guardar-asistencia" type="button" class="guardar-btn">Guardar asistencia</button>
             </div>
-            <button id="guardar-asistencia" type="button" class="guardar-btn">Guardar asistencia</button>
-        </div>
-        <p id="asistencia-message" class="message" role="status"></p>
+            <p id="asistencia-message" class="message" role="status"></p>
 
-        <p id="table-message" class="message" role="status">Cargando datos...</p>
+            <p id="table-message" class="message" role="status">Cargando datos...</p>
 
-        <table class="data-table records-table">
-            <thead>
-                <tr>
-                    <th class="presente-col">Presente</th>
-                    <th>ID de Usuario (RUT)</th>
-                    <th>Nombre</th>
-                    <th>Email</th>
-                </tr>
-            </thead>
-            <tbody id="cuerpo-tabla"></tbody>
-        </table>
+            <table class="data-table records-table">
+                <thead>
+                    <tr>
+                        <th class="presente-col">Presente</th>
+                        <th>ID de Usuario (RUT)</th>
+                        <th>Nombre</th>
+                        <th>Email</th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpo-tabla"></tbody>
+            </table>
+        </section>
+
+        <section>
+            <div class="asistencia-header">
+                <div>
+                    <h2 class="asistencia-titulo">Historial de asistencia</h2>
+                    <p>Selecciona un día para ver el registro de asistencia. Los días con registro se marcan con borde verde.</p>
+                </div>
+            </div>
+
+            <div class="calendar-header">
+                <div class="calendar-nav">
+                    <button type="button" id="mes-anterior">&#9664;</button>
+                </div>
+                <h3 id="titulo-mes"></h3>
+                <div class="calendar-nav">
+                    <button type="button" id="mes-siguiente">&#9654;</button>
+                </div>
+            </div>
+
+            <table class="calendario-mensual">
+                <thead>
+                    <tr>
+                        <th>Lun</th><th>Mar</th><th>Mié</th><th>Jue</th><th>Vie</th><th>Sáb</th><th>Dom</th>
+                    </tr>
+                </thead>
+                <tbody id="calendario-cuerpo"></tbody>
+            </table>
+
+            <div class="detalle-dia">
+                <h3 id="detalle-fecha">Selecciona un día</h3>
+                <ul id="detalle-lista" class="lista-asistencia"></ul>
+            </div>
+        </section>
     </main>
 
 <script type="module">
@@ -71,64 +111,202 @@
 
     const app = initializeApp(firebaseConfig);
     const database = getDatabase(app);
-    const usuariosRef = ref(database, 'usuarios');
 
-    const tableBody = document.querySelector('#cuerpo-tabla');
-    const tableMessage = document.querySelector('#table-message');
+    const LOCAL_USU = 'asistencia_local_usuarios';
+    const LOCAL_ASIST = 'asistencia_local_registro';
+    let dbMode = 'nube';
 
-    const form = document.querySelector('#registro-form');
-    const formMessage = document.querySelector('#form-message');
-    const rutInput = document.querySelector('#rut');
-    const nombreInput = document.querySelector('#nombre');
-    const emailInput = document.querySelector('#email');
-
-    const guardarBtn = document.querySelector('#guardar-asistencia');
-    const asistenciaMessage = document.querySelector('#asistencia-message');
-    const fechaHoy = document.querySelector('#fecha-hoy');
+    const $ = (sel) => document.querySelector(sel);
+    const tableBody = $('#cuerpo-tabla');
+    const tableMessage = $('#table-message');
+    const form = $('#registro-form');
+    const formMessage = $('#form-message');
+    const rutInput = $('#rut');
+    const nombreInput = $('#nombre');
+    const emailInput = $('#email');
+    const guardarBtn = $('#guardar-asistencia');
+    const asistenciaMessage = $('#asistencia-message');
+    const fechaHoy = $('#fecha-hoy');
+    const btnNube = $('#btn-nube');
+    const btnLocal = $('#btn-local');
+    const calendarioCuerpo = $('#calendario-cuerpo');
+    const tituloMes = $('#titulo-mes');
+    const detalleFecha = $('#detalle-fecha');
+    const detalleLista = $('#detalle-lista');
 
     const hoy = new Date();
     const fechaISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
     fechaHoy.textContent = fechaISO;
 
+    // ---------- Capa de datos local ----------
+    const leerUsuariosLocal = () => JSON.parse(localStorage.getItem(LOCAL_USU) || '{}');
+    const guardarUsuariosLocal = (u) => localStorage.setItem(LOCAL_USU, JSON.stringify(u));
+    const leerAsistenciaLocal = () => JSON.parse(localStorage.getItem(LOCAL_ASIST) || '{}');
+    const guardarAsistenciaLocal = (a) => localStorage.setItem(LOCAL_ASIST, JSON.stringify(a));
+
+    // ---------- Calendario ----------
+    const nombresMeses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    let viewDate = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    let verDetalleFecha = null;
+    let diasConRegistro = new Set();
+
+    // ---------- Configurar modo de base de datos ----------
+    function setModo(modo) {
+        dbMode = modo;
+        btnNube.classList.toggle('active', modo === 'nube');
+        btnLocal.classList.toggle('active', modo === 'local');
+        formMessage.textContent = '';
+        asistenciaMessage.textContent = '';
+        verDetalleFecha = null;
+        detalleFecha.textContent = 'Selecciona un día';
+        detalleLista.replaceChildren();
+        limpiarListenersNube();
+        renderTabla();
+        cargarDiasConRegistro();
+    }
+
+    btnNube.addEventListener('click', () => setModo('nube'));
+    btnLocal.addEventListener('click', () => setModo('local'));
+
+    // Guardamos los handle de los listeners de onValue para poder cancelarlos al cambiar de modo
+    let cancelaAsistenciaHoy = null;
+    let cancelaUsuarios = null;
+    let cancelaDias = null;
+
+    function limpiarListenersNube() {
+        if (cancelaAsistenciaHoy) { cancelaAsistenciaHoy(); cancelaAsistenciaHoy = null; }
+        if (cancelaUsuarios) { cancelaUsuarios(); cancelaUsuarios = null; }
+        if (cancelaDias) { cancelaDias(); cancelaDias = null; }
+    }
+
+    // ---------- Cargar usuarios y tabla ----------
+    function renderTabla() {
+        if (dbMode === 'nube') {
+            limpiarListenersNube();
+            cancelaUsuarios = onValue(ref(database, 'usuarios'), (snapshot) => {
+                pintarUsuarios(snapshot);
+            }, (error) => {
+                console.error('Error al leer usuarios:', error);
+                tableBody.replaceChildren();
+                tableMessage.textContent = `No se pudieron cargar los datos (${error.code || 'permiso denegado'}).`;
+            });
+            cancelaAsistenciaHoy = onValue(ref(database, `asistencia/${fechaISO}`), (asistenciaSnap) => {
+                marcarCheckboxes(asistenciaSnap ? asistenciaSnap.val() : null);
+            });
+        } else {
+            limpiarListenersNube();
+            pintarUsuariosLocal(leerUsuariosLocal());
+            marcarCheckboxes(leerAsistenciaLocal()[fechaISO] || null);
+        }
+    }
+
+    function pintarUsuarios(snapshot) {
+        tableBody.replaceChildren();
+        if (!snapshot.exists()) {
+            tableMessage.textContent = 'No hay datos disponibles. Registra un usuario.';
+            return;
+        }
+        snapshot.forEach((userSnapshot) => {
+            const user = userSnapshot.val() || {};
+            tableBody.appendChild(crearFila(userSnapshot.key, user.username, user.email));
+        });
+        tableMessage.textContent = '';
+    }
+
+    function pintarUsuariosLocal(usuarios) {
+        tableBody.replaceChildren();
+        const keys = Object.keys(usuarios);
+        if (keys.length === 0) {
+            tableMessage.textContent = 'No hay datos disponibles. Registra un usuario.';
+            return;
+        }
+        keys.forEach((key) => {
+            const user = usuarios[key] || {};
+            tableBody.appendChild(crearFila(key, user.username, user.email));
+        });
+        tableMessage.textContent = '';
+    }
+
+    function crearFila(rut, nombre, email) {
+        const row = document.createElement('tr');
+        row.dataset.userId = rut;
+
+        const checkboxCell = document.createElement('td');
+        checkboxCell.classList.add('presente-col');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.dataset.userId = rut;
+        checkboxCell.appendChild(checkbox);
+        row.appendChild(checkboxCell);
+
+        [rut, nombre || 'Sin nombre', email || 'Sin correo'].forEach((value) => {
+            const cell = document.createElement('td');
+            cell.textContent = value;
+            row.appendChild(cell);
+        });
+
+        return row;
+    }
+
+    function marcarCheckboxes(dia) {
+        dia = dia || {};
+        tableBody.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+            cb.checked = Boolean(dia[cb.dataset.userId]);
+        });
+    }
+
+    // ---------- Alta de usuario ----------
     form.addEventListener('submit', (event) => {
         event.preventDefault();
         formMessage.textContent = 'Guardando...';
 
-        const rut = rutInput.value.trim().replace(/\s+/g, '');
-
+        const rut = rutInput.value.trim().replace(/\s+/g, '').replace(/\./g, '');
         if (!rut) {
             formMessage.textContent = 'El RUT es obligatorio.';
             return;
         }
 
-        const usuarioEspecificoRef = ref(database, `usuarios/${rut}`);
+        const usuario = {
+            username: nombreInput.value.trim(),
+            email: emailInput.value.trim()
+        };
 
-        usuarioEspecificoRef.once('value').then((snap) => {
-            if (snap.exists()) {
+        if (dbMode === 'nube') {
+            ref(database, `usuarios/${rut}`).once('value').then((snap) => {
+                if (snap.exists()) {
+                    formMessage.textContent = 'Ya existe un usuario con ese RUT.';
+                    return;
+                }
+                return ref(database, `usuarios/${rut}`).set(usuario).then(() => {
+                    formMessage.textContent = 'Usuario registrado correctamente (nube).';
+                    form.reset();
+                });
+            }).catch((error) => {
+                console.error('Error al registrar usuario:', error);
+                formMessage.textContent = `No se pudo guardar (${error.code || 'permiso denegado'}).`;
+            });
+        } else {
+            const usuarios = leerUsuariosLocal();
+            if (usuarios[rut]) {
                 formMessage.textContent = 'Ya existe un usuario con ese RUT.';
                 return;
             }
-            return usuarioEspecificoRef.set({
-                username: nombreInput.value.trim(),
-                email: emailInput.value.trim()
-            }).then(() => {
-                formMessage.textContent = 'Usuario registrado correctamente.';
-                form.reset();
-            });
-        }).catch((error) => {
-            console.error('Error al registrar usuario:', error);
-            formMessage.textContent = `No se pudo guardar (${error.code || 'permiso denegado'}). Revisa las reglas de Firebase.`;
-        });
+            usuarios[rut] = usuario;
+            guardarUsuariosLocal(usuarios);
+            formMessage.textContent = 'Usuario registrado correctamente (local).';
+            form.reset();
+            renderTabla();
+        }
     });
 
+    // ---------- Guardado de asistencia ----------
     guardarBtn.addEventListener('click', () => {
         const asistencias = {};
-
         tableBody.querySelectorAll('tr').forEach((row) => {
             const userId = row.dataset.userId;
             const checkbox = row.querySelector('input[type="checkbox"]');
             if (userId && checkbox) {
-                asistencias[`asistencia/${fechaISO}/${userId}`] = checkbox.checked;
+                asistencias[userId] = checkbox.checked;
             }
         });
 
@@ -140,61 +318,168 @@
         asistenciaMessage.textContent = 'Guardando asistencia...';
         guardarBtn.disabled = true;
 
-        update(ref(database), asistencias).then(() => {
-            asistenciaMessage.textContent = 'Asistencia guardada correctamente.';
-        }).catch((error) => {
-            console.error('Error al guardar asistencia:', error);
-            asistenciaMessage.textContent = `No se pudo guardar la asistencia (${error.code || 'permiso denegado'}).`;
-        }).finally(() => {
+        if (dbMode === 'nube') {
+            const updates = {};
+            Object.keys(asistencias).forEach((userId) => {
+                updates[`asistencia/${fechaISO}/${userId}`] = asistencias[userId];
+            });
+            update(ref(database), updates).then(() => {
+                asistenciaMessage.textContent = 'Asistencia guardada correctamente (nube).';
+            }).catch((error) => {
+                console.error('Error al guardar asistencia:', error);
+                asistenciaMessage.textContent = `No se pudo guardar la asistencia (${error.code || 'permiso denegado'}).`;
+            }).finally(() => {
+                guardarBtn.disabled = false;
+            });
+        } else {
+            const asistencia = leerAsistenciaLocal();
+            asistencia[fechaISO] = Object.assign(asistencia[fechaISO] || {}, asistencias);
+            guardarAsistenciaLocal(asistencia);
+            asistenciaMessage.textContent = 'Asistencia guardada correctamente (local).';
             guardarBtn.disabled = false;
-        });
+            cargarDiasConRegistro();
+        }
     });
 
-    const asistenciaRef = ref(database, `asistencia/${fechaISO}`);
+    // ---------- Calendario ----------
+    function cargarDiasConRegistro() {
+        if (dbMode === 'nube') {
+            if (cancelaDias) { cancelaDias(); cancelaDias = null; }
+            cancelaDias = onValue(ref(database, 'asistencia'), (snap) => {
+                diasConRegistro = new Set();
+                if (snap.exists()) {
+                    snap.forEach((child) => diasConRegistro.add(child.key));
+                }
+                renderCalendario(viewDate.getFullYear(), viewDate.getMonth());
+            });
+        } else {
+            diasConRegistro = new Set(Object.keys(leerAsistenciaLocal()));
+            renderCalendario(viewDate.getFullYear(), viewDate.getMonth());
+        }
+    }
 
-    onValue(asistenciaRef, (asistenciaSnap) => {
-        tableBody.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-            cb.checked = Boolean(asistenciaSnap.child(cb.dataset.userId).val());
-        });
+    $('#mes-anterior').addEventListener('click', () => {
+        viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1);
+        renderCalendario(viewDate.getFullYear(), viewDate.getMonth());
+    });
+    $('#mes-siguiente').addEventListener('click', () => {
+        viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1);
+        renderCalendario(viewDate.getFullYear(), viewDate.getMonth());
     });
 
-    onValue(usuariosRef, (snapshot) => {
-        tableBody.replaceChildren();
+    function renderCalendario(anio, mes) {
+        tituloMes.textContent = `${nombresMeses[mes]} ${anio}`;
+        calendarioCuerpo.replaceChildren();
 
-        if (!snapshot.exists()) {
-            tableMessage.textContent = 'No hay datos disponibles. Registra un usuario.';
-            tableBody.replaceChildren();
+        const primerDia = new Date(anio, mes, 1);
+        let diaInicioSemana = (primerDia.getDay() + 6) % 7;
+        const diasEnMes = new Date(anio, mes + 1, 0).getDate();
+
+        let celdas = [];
+        for (let i = 0; i < diaInicioSemana; i++) celdas.push('');
+
+        for (let d = 1; d <= diasEnMes; d++) {
+            celdas.push({ dia: d, fecha: `${anio}-${String(mes + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}` });
+        }
+        while (celdas.length % 7 !== 0) celdas.push('');
+
+        let fila = document.createElement('tr');
+        for (let i = 0; i < celdas.length; i++) {
+            if (i % 7 === 0 && i !== 0) {
+                calendarioCuerpo.appendChild(fila);
+                fila = document.createElement('tr');
+            }
+            const td = document.createElement('td');
+            const celda = celdas[i];
+
+            if (celda === '') {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'dia vacio';
+                btn.disabled = true;
+                td.appendChild(btn);
+            } else {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.textContent = celda.dia;
+                btn.className = 'dia';
+                btn.dataset.fecha = celda.fecha;
+
+                if (celda.fecha === fechaISO) btn.classList.add('dia-hoy');
+                if (diasConRegistro.has(celda.fecha)) btn.classList.add('con-registro');
+                if (verDetalleFecha === celda.fecha) btn.classList.add('seleccionado');
+
+                btn.addEventListener('click', () => {
+                    verDetalleFecha = celda.fecha;
+                    renderCalendario(viewDate.getFullYear(), viewDate.getMonth());
+                    mostrarDetalle(celda.fecha);
+                });
+
+                td.appendChild(btn);
+            }
+            fila.appendChild(td);
+        }
+        calendarioCuerpo.appendChild(fila);
+    }
+
+    // ---------- Detalle de un día ----------
+    function mostrarDetalle(fecha) {
+        if (!fecha) return;
+        detalleFecha.textContent = 'Asistencia del día ' + fecha;
+        detalleLista.replaceChildren();
+
+        let usuarios = {};
+        let dia = {};
+
+        if (dbMode === 'nube') {
+            onValue(ref(database, 'usuarios'), (snapUsu) => {
+                usuarios = {};
+                if (snapUsu.exists()) snapUsu.forEach((u) => { usuarios[u.key] = u.val() || {}; });
+                onValue(ref(database, `asistencia/${fecha}`), (snapDia) => {
+                    dia = snapDia.exists() ? (snapDia.val() || {}) : {};
+                    pintarDetalle(usuarios, dia);
+                });
+            });
+        } else {
+            usuarios = leerUsuariosLocal();
+            dia = leerAsistenciaLocal()[fecha] || {};
+            pintarDetalle(usuarios, dia);
+        }
+    }
+
+    function pintarDetalle(usuarios, dia) {
+        detalleLista.replaceChildren();
+        const keys = Object.keys(usuarios);
+        if (keys.length === 0) {
+            addDetalleLi('No hay usuarios registrados.');
             return;
         }
-
-        snapshot.forEach((userSnapshot) => {
-            const user = userSnapshot.val() || {};
-            const row = document.createElement('tr');
-            row.dataset.userId = userSnapshot.key;
-
-            const checkboxCell = document.createElement('td');
-            checkboxCell.classList.add('presente-col');
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.dataset.userId = userSnapshot.key;
-            checkboxCell.appendChild(checkbox);
-            row.appendChild(checkboxCell);
-
-            [userSnapshot.key, user.username || 'Sin nombre', user.email || 'Sin correo'].forEach((value) => {
-                const cell = document.createElement('td');
-                cell.textContent = value;
-                row.appendChild(cell);
-            });
-
-            tableBody.appendChild(row);
+        if (Object.keys(dia).length === 0) {
+            addDetalleLi('No hay registro de asistencia para este día.');
+            return;
+        }
+        keys.forEach((rut) => {
+            const presente = Boolean(dia[rut]);
+            const li = document.createElement('li');
+            const estado = document.createElement('span');
+            estado.className = 'estado ' + (presente ? 'presente' : 'ausente');
+            estado.textContent = presente ? 'Presente' : 'Ausente';
+            li.appendChild(estado);
+            const nombre = document.createElement('span');
+            nombre.textContent = (usuarios[rut] && usuarios[rut].username) || 'Sin nombre';
+            li.appendChild(nombre);
+            detalleLista.appendChild(li);
         });
+    }
 
-        tableMessage.textContent = '';
-    }, (error) => {
-        console.error('Error al leer usuarios desde Firebase:', error);
-        tableBody.replaceChildren();
-        tableMessage.textContent = `No se pudieron cargar los datos (${error.code || 'permiso denegado'}). Revisa las reglas de Firebase.`;
-    });
+    function addDetalleLi(texto) {
+        const li = document.createElement('li');
+        li.textContent = texto;
+        detalleLista.appendChild(li);
+    }
+
+    // ---------- Inicialización ----------
+    setModo('nube');
 </script>
 
 </body>
