@@ -45,6 +45,10 @@
             </div>
             <p id="asistencia-message" class="message" role="status"></p>
 
+            <div class="buscador">
+                <input type="text" id="buscar" placeholder="Buscar por nombre, RUT o email...">
+            </div>
+
             <p id="table-message" class="message" role="status">Cargando datos...</p>
 
             <table class="data-table records-table">
@@ -54,6 +58,7 @@
                         <th>ID de Usuario (RUT)</th>
                         <th>Nombre</th>
                         <th>Email</th>
+                        <th class="acciones-col">Acciones</th>
                     </tr>
                 </thead>
                 <tbody id="cuerpo-tabla"></tbody>
@@ -96,7 +101,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
-    import { getDatabase, onValue, ref, update } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
+    import { getDatabase, onValue, ref, update, remove } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyACFOP5GMyzgvyiIav1v-nY0sicTkVlZdg",
@@ -133,6 +138,7 @@
     const tituloMes = $('#titulo-mes');
     const detalleFecha = $('#detalle-fecha');
     const detalleLista = $('#detalle-lista');
+    const buscarInput = $('#buscar');
 
     const hoy = new Date();
     const fechaISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
@@ -245,6 +251,16 @@
             row.appendChild(cell);
         });
 
+        const accionesCell = document.createElement('td');
+        accionesCell.classList.add('acciones-col');
+        const btnEliminar = document.createElement('button');
+        btnEliminar.type = 'button';
+        btnEliminar.className = 'btn-eliminar';
+        btnEliminar.textContent = 'Eliminar';
+        btnEliminar.addEventListener('click', () => eliminarUsuario(rut));
+        accionesCell.appendChild(btnEliminar);
+        row.appendChild(accionesCell);
+
         return row;
     }
 
@@ -253,6 +269,26 @@
         tableBody.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
             cb.checked = Boolean(dia[cb.dataset.userId]);
         });
+    }
+
+    // ---------- Eliminar usuario ----------
+    function eliminarUsuario(rut) {
+        if (!confirm('¿Eliminar al usuario ' + rut + '?')) return;
+
+        if (dbMode === 'nube') {
+            remove(ref(database, `usuarios/${rut}`)).then(() => {
+                formMessage.textContent = 'Usuario eliminado correctamente (nube).';
+            }).catch((error) => {
+                console.error('Error al eliminar:', error);
+                formMessage.textContent = 'No se pudo eliminar. Verifica tu conexión o permisos.';
+            });
+        } else {
+            const usuarios = leerUsuariosLocal();
+            delete usuarios[rut];
+            guardarUsuariosLocal(usuarios);
+            formMessage.textContent = 'Usuario eliminado correctamente (local).';
+            renderTabla();
+        }
     }
 
     // ---------- Alta de usuario ----------
@@ -265,11 +301,29 @@
             formMessage.textContent = 'El RUT es obligatorio.';
             return;
         }
+        if (rut.length < 7) {
+            formMessage.textContent = 'El RUT debe tener al menos 7 caracteres.';
+            return;
+        }
 
-        const usuario = {
-            username: nombreInput.value.trim(),
-            email: emailInput.value.trim()
-        };
+        const nombre = nombreInput.value.trim();
+        if (!nombre) {
+            formMessage.textContent = 'El nombre es obligatorio.';
+            return;
+        }
+
+        const email = emailInput.value.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email) {
+            formMessage.textContent = 'El email es obligatorio.';
+            return;
+        }
+        if (!emailRegex.test(email)) {
+            formMessage.textContent = 'El formato del email no es válido.';
+            return;
+        }
+
+        const usuario = { username: nombre, email };
 
         if (dbMode === 'nube') {
             ref(database, `usuarios/${rut}`).once('value').then((snap) => {
@@ -283,7 +337,11 @@
                 });
             }).catch((error) => {
                 console.error('Error al registrar usuario:', error);
-                formMessage.textContent = `No se pudo guardar (${error.code || 'permiso denegado'}).`;
+                if (error.code === 'PERMISSION_DENIED') {
+                    formMessage.textContent = 'Sin permisos. Verifica las reglas de Firebase.';
+                } else {
+                    formMessage.textContent = 'Error de conexión. Verifica tu red e intenta de nuevo.';
+                }
             });
         } else {
             const usuarios = leerUsuariosLocal();
@@ -327,7 +385,11 @@
                 asistenciaMessage.textContent = 'Asistencia guardada correctamente (nube).';
             }).catch((error) => {
                 console.error('Error al guardar asistencia:', error);
-                asistenciaMessage.textContent = `No se pudo guardar la asistencia (${error.code || 'permiso denegado'}).`;
+                if (error.code === 'PERMISSION_DENIED') {
+                    asistenciaMessage.textContent = 'Sin permisos. Verifica las reglas de Firebase.';
+                } else {
+                    asistenciaMessage.textContent = 'Error de conexión. Verifica tu red e intenta de nuevo.';
+                }
             }).finally(() => {
                 guardarBtn.disabled = false;
             });
@@ -477,6 +539,37 @@
         li.textContent = texto;
         detalleLista.appendChild(li);
     }
+
+    // ---------- Filtro de búsqueda ----------
+    buscarInput.addEventListener('input', () => {
+        const termino = buscarInput.value.trim().toLowerCase();
+        const filas = tableBody.querySelectorAll('tr');
+        filas.forEach((fila) => {
+            const celdas = fila.querySelectorAll('td');
+            let textoFila = '';
+            celdas.forEach((c) => textoFila += ' ' + c.textContent.toLowerCase());
+            if (!termino || textoFila.includes(termino)) {
+                fila.style.display = '';
+            } else {
+                fila.style.display = 'none';
+            }
+        });
+    });
+
+    // ---------- Verificar conexión ----------
+    function verificarConexion() {
+        if (!navigator.onLine) {
+            formMessage.textContent = 'Sin conexión a internet. Los cambios se guardarán localmente.';
+            return false;
+        }
+        return true;
+    }
+    window.addEventListener('offline', () => {
+        formMessage.textContent = 'Sin conexión a internet. Los cambios se guardarán localmente.';
+    });
+    window.addEventListener('online', () => {
+        formMessage.textContent = 'Conexión restaurada.';
+    });
 
     // ---------- Inicialización ----------
     setModo('nube');
