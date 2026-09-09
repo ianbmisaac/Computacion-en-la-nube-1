@@ -18,13 +18,15 @@ https://ianbmisaac.github.io/Computacion-en-la-nube-1/
 
 No se necesita instalar nada. Solo abre el enlace en tu navegador.
 
-### Opción 2: Local (sin servidor)
+### Opción 2: Ejecutar en tu computador
 
 1. Clona el repositorio:
    ```bash
    git clone https://github.com/ianbmisaac/Computacion-en-la-nube-1.git
    ```
 2. Abre `index.html` en tu navegador (doble clic o arrastra el archivo).
+
+> **Nota**: El "modo local" de la aplicación (con el botón "Base de datos local") no requiere servidor: guarda los datos en el **localStorage del navegador**. El "modo nube" usa Firebase y requiere conexión a internet.
 
 ---
 
