@@ -416,3 +416,42 @@ button:disabled {
     cursor: wait;
     opacity: 0.65;
 }
+
+/* Botón eliminar */
+.data-table th.acciones-col,
+.data-table td.acciones-col {
+    text-align: center;
+    width: 100px;
+}
+
+.btn-eliminar {
+    background-color: #e74c3c;
+    color: #fff;
+    border: none;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.btn-eliminar:hover {
+    background-color: #c0392b;
+}
+
+/* Buscador */
+.buscador {
+    margin-bottom: 14px;
+}
+
+.buscador input {
+    border: 1px solid #c8d3dc;
+    border-radius: 5px;
+    font: inherit;
+    padding: 10px;
+    width: 100%;
+}
+
+.buscador input:focus {
+    border-color: #2980b9;
+    outline: 2px solid rgba(41, 128, 185, 0.2);
+}
